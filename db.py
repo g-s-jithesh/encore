@@ -42,6 +42,13 @@ def next_due(title: str | None = None) -> dict | None:
     return dict(r) if r else None
 
 
+def list_cards() -> list[dict]:
+    """Return all saved flashcards in review order."""
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM cards ORDER BY due, id").fetchall()
+    return [dict(row) for row in rows]
+
+
 def next_review(title: str | None = None) -> str | None:
     """Earliest future due date, or None if there are no cards."""
     where, args = _topic(title)

@@ -22,6 +22,7 @@ def test_flow():
     assert db.add_cards("t", make_cards("What is ATP? Cell energy currency")) == 1
     c = db.next_due()
     assert c["question"] == "What is ATP?"
+    assert db.list_cards()[0]["answer"] == "Cell energy currency"
     g = db.grade(c["id"], True)
     assert g["box"] == 1 and db.next_due() is None
     assert db.stats() == {"total": 1, "due_today": 0, "mastered": 0}

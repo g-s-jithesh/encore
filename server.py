@@ -2,11 +2,15 @@
 
 Run: python server.py   ->  http://127.0.0.1:8000/mcp
 """
+import json
+from pathlib import Path
+
 import logging
 from datetime import date
 
-from mcp.server.mcpserver import MCPServer
 from dotenv import load_dotenv
+from mcp.server.apps import Apps, ResourceCsp
+from mcp.server.mcpserver import MCPServer
 
 import db
 from generate import make_cards
@@ -14,6 +18,30 @@ from generate import make_cards
 load_dotenv()
 log = logging.getLogger("encore")
 MAX_TEXT = 20_000  # ponytail: hard cap keeps one Bedrock call cheap; raise once generate.py chunks
+
+apps = Apps()
+FLASHCARD_APP_URI = "ui://encore/flashcards.html"
+apps.add_html_resource(
+    FLASHCARD_APP_URI,
+    (Path(__file__).parent / "web" / "flashcards.html").read_text(encoding="utf-8"),
+    name="Encore flashcards",
+    title="Your flashcards",
+    description="Browse saved flashcards and reveal their answers.",
+    csp=ResourceCsp(resource_domains=["https://esm.sh"]),
+    prefers_border=True,
+)
+
+@apps.tool(
+    resource_uri=FLASHCARD_APP_URI,
+    visibility=["model", "app"],
+    title="Show saved flashcards",
+    description="Display the learner's saved flashcards in the interactive flashcard view.",
+)
+def list_flashcards() -> str:
+    """Return saved flashcards and open the interactive flashcard view."""
+    cards = db.list_cards()
+    return json.dumps({"cards": cards}, ensure_ascii=False)
+
 
 mcp = MCPServer(
     "Encore",
@@ -23,8 +51,10 @@ mcp = MCPServer(
         "then call grade_card, and keep going until next_card says done. For 'quiz me on X' "
         "pass title=X. Cards return on a spaced schedule across sessions. list_materials "
         "names the topics; confirm with the user before delete_material. "
-        "Tool results include plain sentences (message, error, comes_back) you can read aloud."
+        "Tool results include plain sentences (message, error, comes_back) you can read aloud. "
+        "When the learner asks to see their flashcards, call list_flashcards."
     ),
+    extensions=[apps],
 )
 
 

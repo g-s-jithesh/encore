@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Encore flashcards</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #20251f;
+      background: #f5f3ee;
+      --green: #275c47;
+      --muted: #687168;
+    }
+
+    * { box-sizing: border-box; }
+    body { min-width: 260px; margin: 0; padding: 20px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font: 500 1.5rem Georgia, "Times New Roman", serif; }
+    #count { color: var(--muted); font-size: .8rem; }
+    #cards { display: grid; gap: 12px; margin-top: 18px; }
+    .card {
+      overflow: hidden;
+      border: 1px solid #e2e5dc;
+      border-radius: 14px;
+      background: #fffefa;
+    }
+    .question { padding: 15px 16px; }
+    .label { display: block; margin-bottom: 6px; color: var(--green); font-size: .68rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .prompt { margin: 0; font-size: 1rem; line-height: 1.45; }
+    .answer {
+      width: 100%;
+      padding: 11px 16px;
+      border: 0;
+      border-top: 1px solid #e9ebe5;
+      color: var(--green);
+      background: #f5f7f1;
+      text-align: left;
+      cursor: pointer;
+    }
+    .answer:hover { background: #ecf1e9; }
+    .answer:focus-visible, #refresh:focus-visible { outline: 3px solid #9fc5a9; outline-offset: 2px; }
+    .answer-text { display: none; padding: 0 16px 14px; color: #404a40; font-size: .92rem; line-height: 1.5; }
+    .card.revealed .answer-text { display: block; }
+    .card.revealed .answer { border-bottom: 1px solid #e9ebe5; }
+    #empty { color: var(--muted); line-height: 1.5; }
+    #refresh { padding: 8px 11px; border: 1px solid #dce2d8; border-radius: 10px; color: var(--green); background: #fffefa; cursor: pointer; }
+    #error { color: #a3342d; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Your flashcards</h1>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+  <p id="count" aria-live="polite">Connecting to Encore…</p>
+  <p id="error" role="status"></p>
+  <section id="cards" aria-label="Saved flashcards"></section>
+  <script type="module">
+    import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@2.0.3/app-with-deps?bundle";
+
+    const count = document.querySelector("#count");
+    const cardsElement = document.querySelector("#cards");
+    const errorElement = document.querySelector("#error");
+    const app = new App({ name: "Encore flashcards", version: "1.0.0" });
+
+    function render(result) {
+      const text = result.content?.find((item) => item.type === "text")?.text;
+      if (!text) {
+        errorElement.textContent = "Encore did not return any flashcards.";
+        return;
+      }
+
+      try {
+        const data = JSON.parse(text);
+        const cards = Array.isArray(data.cards) ? data.cards : [];
+        cardsElement.replaceChildren();
+        count.textContent = `${cards.length} saved ${cards.length === 1 ? "card" : "cards"}`;
+        errorElement.textContent = "";
+
+        if (cards.length === 0) {
+          const empty = document.createElement("p");
+          empty.id = "empty";
+          empty.textContent = "No flashcards yet. Tell Encore what you’ve been studying to create some.";
+          cardsElement.append(empty);
+          return;
+        }
+
+        for (const card of cards) {
+          const article = document.createElement("article");
+          article.className = "card";
+          const question = document.createElement("div");
+          question.className = "question";
+          const title = document.createElement("span");
+          title.className = "label";
+          title.textContent = card.title || "Flashcard";
+          const prompt = document.createElement("p");
+          prompt.className = "prompt";
+          prompt.textContent = card.question;
+          const answerButton = document.createElement("button");
+          answerButton.className = "answer";
+          answerButton.type = "button";
+          answerButton.setAttribute("aria-expanded", "false");
+          answerButton.textContent = "Reveal answer";
+          const answer = document.createElement("div");
+          answer.className = "answer-text";
+          answer.textContent = card.answer;
+          answerButton.addEventListener("click", () => {
+            const revealed = article.classList.toggle("revealed");
+            answerButton.textContent = revealed ? "Hide answer" : "Reveal answer";
+            answerButton.setAttribute("aria-expanded", String(revealed));
+          });
+          question.append(title, prompt);
+          article.append(question, answerButton, answer);
+          cardsElement.append(article);
+        }
+      } catch {
+        errorElement.textContent = "Encore sent flashcards in an unexpected format.";
+      }
+    }
+
+    app.ontoolresult = render;
+    document.querySelector("#refresh").addEventListener("click", async () => {
+      errorElement.textContent = "";
+      count.textContent = "Refreshing…";
+      try {
+        const result = await app.callServerTool({ name: "list_flashcards", arguments: {} });
+        render(result);
+      } catch {
+        count.textContent = "";
+        errorElement.textContent = "Could not refresh your flashcards. Please try again.";
+      }
+    });
+
+    app.connect().catch(() => {
+      count.textContent = "";
+      errorElement.textContent = "Could not connect to Encore. Reopen the flashcard view to try again.";
+    });
+  </script>
+</body>
+</html>

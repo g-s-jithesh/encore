@@ -54,7 +54,15 @@ async def run(url: str) -> None:
     async with Client(url) as client:
         tools = {t.name for t in (await client.list_tools()).tools}
         assert tools >= {"add_material", "next_card", "grade_card", "progress",
-                         "list_materials", "delete_material"}, tools
+                         "list_materials", "delete_material", "list_flashcards"}, tools
+
+        flashcard_tool = next(t for t in (await client.list_tools()).tools
+                              if t.name == "list_flashcards")
+        assert flashcard_tool.meta["ui"]["resourceUri"] == "ui://encore/flashcards.html"
+        app = await client.read_resource("ui://encore/flashcards.html")
+        assert app.contents[0].mime_type == "text/html;profile=mcp-app"
+        assert "Reveal answer" in app.contents[0].text
+        assert (await call(client, "list_flashcards"))["cards"] == []
 
         p = await call(client, "progress")
         assert "don't have any flashcards" in str(p)
