@@ -4,6 +4,8 @@ OWNER: Mano (@Mkkumar2006)
 Contract (do not change without a PR + team agreement):
     make_cards(text: str) -> list[{"question": str, "answer": str}]
 
+Provider: LLM_PROVIDER=bedrock (default), gemini (see gemini.py), or none
+(offline regex parser only, used by the tests).
 Bedrock model is read from the BEDROCK_MODEL_ID env var (required).
 AWS credentials are picked up from the environment (AWS_ACCESS_KEY_ID,
 AWS_SECRET_ACCESS_KEY, AWS_REGION) or from any standard boto3 credential
@@ -24,6 +26,8 @@ import os
 import re
 
 import boto3
+
+import gemini
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +85,16 @@ def _call_bedrock(user_message: str) -> str:
     return response["output"]["message"]["content"][0]["text"].strip()
 
 
+def _call_gemini(user_message: str) -> str:
+    """Same contract as _call_bedrock, via Gemini (LLM_PROVIDER=gemini)."""
+    content = gemini.generate(
+        [{"role": "user", "parts": [{"text": user_message}]}],
+        _SYSTEM,
+        responseMimeType="application/json",
+    )
+    return "".join(part.get("text", "") for part in content.get("parts", [])).strip()
+
+
 def _parse_json(raw: str) -> list[dict]:
     """Extract a JSON array from raw text, stripping any markdown fences."""
     # strip optional ```json ... ``` fences
@@ -102,8 +116,8 @@ def _llm_cards(text: str, *, strict: bool = False) -> list[dict]:
     """Ask Bedrock once, parse JSON, raise on failure."""
     tmpl = _STRICT_TMPL if strict else _USER_TMPL
     prompt = tmpl.format(text=text, min_cards=MIN_CARDS, max_cards=MAX_CARDS)
-    raw = _call_bedrock(prompt)
-    return _parse_json(raw)
+    call = _call_gemini if os.environ.get("LLM_PROVIDER") == "gemini" else _call_bedrock
+    return _parse_json(call(prompt))
 
 
 # ── fallback regex parser (keeps pipeline alive on total failure) ─────────────
@@ -158,6 +172,9 @@ def make_cards(text: str) -> list[dict]:
     - Malformed JSON by retrying once with a stricter prompt.
     - Total failure by falling back to the regex parser.
     """
+    if os.environ.get("LLM_PROVIDER") == "none":  # offline: tests and demos without an LLM
+        return _dedupe(_regex_fallback(text))
+
     all_cards: list[dict] = []
 
     for chunk in _chunks(text):

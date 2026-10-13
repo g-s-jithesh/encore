@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 os.environ["ENCORE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
+os.environ["LLM_PROVIDER"] = "none"  # never call a real LLM from tests
 
 import db
 import srs

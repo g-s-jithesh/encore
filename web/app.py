@@ -25,12 +25,15 @@ from starlette.routing import Route
 
 load_dotenv()
 
+import gemini  # noqa: E402
+
 logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 MCP_SERVER_URL = os.getenv(
     "MCP_SERVER_URL",
     f"http://127.0.0.1:{os.getenv('ENCORE_PORT', '8000')}/mcp",
 )
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "bedrock")  # or "gemini"
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "")
 BEDROCK_REGION = os.getenv("AWS_REGION", "us-east-1")
 MAX_TOOL_ROUNDS = 8
@@ -87,16 +90,68 @@ def _text_from_message(message: dict[str, Any]) -> str:
     ).strip()
 
 
+def _gemini_converse(system: list[dict], messages: list[dict], toolConfig: dict) -> dict:
+    """Run one Converse-shaped call on Gemini, so run_agent's loop works for both providers."""
+    names: dict[str, str] = {}
+    contents = []
+    for message in messages:
+        parts = []
+        for block in message["content"]:
+            if "toolUse" in block:
+                names[block["toolUse"]["toolUseId"]] = block["toolUse"]["name"]
+            elif "toolResult" in block:
+                result = block["toolResult"]
+                parts.append({"functionResponse": {
+                    "name": names[result["toolUseId"]],
+                    "response": {"result": result["content"][0]["text"]},
+                }})
+            elif "text" in block:
+                parts.append({"text": block["text"]})
+        # replay Gemini's own turn verbatim: it carries thought signatures the API requires back
+        contents.append(message.get("_gemini") or {"role": "user", "parts": parts})
+
+    content = gemini.generate(contents, system[0]["text"], [
+        {"name": t["toolSpec"]["name"], "description": t["toolSpec"]["description"],
+         "parametersJsonSchema": t["toolSpec"]["inputSchema"]["json"]}
+        for t in toolConfig["tools"]
+    ])
+    blocks: list[dict[str, Any]] = []
+    for part in content.get("parts", []):
+        if "functionCall" in part:
+            call = part["functionCall"]
+            blocks.append({"toolUse": {"toolUseId": call.get("id") or str(uuid4()),
+                                       "name": call["name"], "input": call.get("args") or {}}})
+        elif "text" in part and not part.get("thought"):
+            blocks.append({"text": part["text"]})
+    return {
+        "output": {"message": {"role": "assistant", "content": blocks, "_gemini": content}},
+        "stopReason": "tool_use" if any("toolUse" in b for b in blocks) else "end_turn",
+    }
+
+
 async def run_agent(
     messages: list[dict[str, Any]],
     bedrock_client: Any | None = None,
     mcp_server_url: str = MCP_SERVER_URL,
 ) -> str:
-    """Run one Bedrock turn, executing requested tools through the MCP server."""
-    if not BEDROCK_MODEL_ID:
-        raise RuntimeError("BEDROCK_MODEL_ID is not configured.")
+    """Run one agent turn, executing requested tools through the MCP server."""
+    try:
+        return await _run_agent(messages, bedrock_client, mcp_server_url)
+    except ExceptionGroup as group:  # the MCP client's task group wraps errors raised inside it
+        error: BaseException = group
+        while isinstance(error, ExceptionGroup) and len(error.exceptions) == 1:
+            error = error.exceptions[0]
+        raise error from None
 
-    client = bedrock_client or boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+
+async def _run_agent(messages: list[dict[str, Any]], bedrock_client: Any | None, mcp_server_url: str) -> str:
+    if LLM_PROVIDER == "gemini":
+        converse = _gemini_converse
+    else:
+        if not BEDROCK_MODEL_ID:
+            raise RuntimeError("BEDROCK_MODEL_ID is not configured.")
+        client = bedrock_client or boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+        converse = partial(client.converse, modelId=BEDROCK_MODEL_ID)
 
     async with streamable_http_client(mcp_server_url) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
@@ -107,8 +162,7 @@ async def run_agent(
             for _ in range(MAX_TOOL_ROUNDS):
                 response = await anyio.to_thread.run_sync(
                     partial(
-                        client.converse,
-                        modelId=BEDROCK_MODEL_ID,
+                        converse,
                         system=[{"text": SYSTEM_PROMPT}],
                         messages=messages,
                         toolConfig=tool_config,

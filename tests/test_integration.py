@@ -25,7 +25,7 @@ def free_port() -> int:
 
 
 def start_server(port: int) -> subprocess.Popen:
-    env = {**os.environ, "ENCORE_PORT": str(port),
+    env = {**os.environ, "ENCORE_PORT": str(port), "LLM_PROVIDER": "none",
            "ENCORE_DB": os.path.join(tempfile.mkdtemp(), "it.db")}
     proc = subprocess.Popen([sys.executable, "server.py"], cwd=ROOT, env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

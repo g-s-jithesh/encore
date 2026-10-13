@@ -12,10 +12,11 @@ from mcp.server.mcpserver import MCPServer
 from dotenv import load_dotenv
 from starlette.responses import HTMLResponse
 
-import db
-from generate import make_cards
+load_dotenv()  # before db/generate, which read env vars at import
 
-load_dotenv()
+import db  # noqa: E402
+from generate import make_cards  # noqa: E402
+
 log = logging.getLogger("encore")
 MAX_TEXT = 20_000  # ponytail: hard cap keeps one Bedrock call cheap; raise once generate.py chunks
 FLASHCARDS_URI = "ui://encore/flashcards.html"

@@ -142,6 +142,7 @@ class WebAgentTests(IsolatedAsyncioTestCase):
             patch.object(web_app, "streamable_http_client", fake_transport),
             patch.object(web_app, "ClientSession", return_value=session),
             patch.object(web_app, "BEDROCK_MODEL_ID", "test-model"),
+            patch.object(web_app, "LLM_PROVIDER", "bedrock"),  # .env may select gemini locally
         ):
             messages = [
                 {"role": "user", "content": [{"text": "I studied ATP."}]},
@@ -163,6 +164,52 @@ class WebAgentTests(IsolatedAsyncioTestCase):
             "add_material",
         )
         self.assertEqual(messages[2]["content"][0]["toolResult"]["toolUseId"], "call-1")
+
+    async def test_gemini_provider_runs_the_same_tool_loop(self):
+        session = FakeClientSession()
+        replies = [
+            {"role": "model", "parts": [{"functionCall": {"name": "add_material",
+                                                          "args": {"title": "Biology", "text": "ATP"}},
+                                         "thoughtSignature": "sig"}]},
+            {"role": "model", "parts": [{"text": "Added three cards from Biology."}]},
+        ]
+        requests = []
+
+        def fake_generate(contents, system, tools):
+            requests.append([dict(c) for c in contents])
+            return replies.pop(0)
+
+        @asynccontextmanager
+        async def fake_transport(_):
+            yield object(), object()
+
+        with (
+            patch.object(web_app, "streamable_http_client", fake_transport),
+            patch.object(web_app, "ClientSession", return_value=session),
+            patch.object(web_app, "LLM_PROVIDER", "gemini"),
+            patch.object(web_app.gemini, "generate", fake_generate),
+        ):
+            reply = await web_app.run_agent([{"role": "user", "content": [{"text": "I studied ATP."}]}])
+
+        self.assertEqual(reply, "Added three cards from Biology.")
+        self.assertEqual(session.calls, [("add_material", {"title": "Biology", "text": "ATP"})])
+        second = requests[1]
+        self.assertEqual(second[1]["parts"][0]["thoughtSignature"], "sig")  # model turn replayed verbatim
+        self.assertEqual(second[2]["parts"][0]["functionResponse"]["name"], "add_material")
+
+    async def test_errors_inside_mcp_client_are_unwrapped(self):
+        @asynccontextmanager
+        async def failing_transport(_):
+            raise ExceptionGroup("task group", [OSError("connection refused")])
+            yield
+
+        with (
+            patch.object(web_app, "streamable_http_client", failing_transport),
+            patch.object(web_app, "BEDROCK_MODEL_ID", "test-model"),
+            patch.object(web_app, "LLM_PROVIDER", "bedrock"),
+        ):
+            with self.assertRaises(OSError):
+                await web_app.run_agent([], bedrock_client=FakeBedrock())
 
 
 if __name__ == "__main__":

@@ -31,6 +31,10 @@ Run the browser voice-flow tests after `npm ci`, with
 Copy `.env.example` to `.env` and fill in AWS credentials.
 `BEDROCK_MODEL_ID` defaults to `amazon.nova-lite-v1:0`; change it if needed.
 
+No AWS access? Set `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` (free key from
+[Google AI Studio](https://aistudio.google.com)) to use Gemini instead of Bedrock.
+`LLM_PROVIDER=none` skips the LLM in card generation (cards come from `question? answer` lines); the web agent still needs bedrock or gemini.
+
 ## Layout
 | Path | What |
 |---|---|
