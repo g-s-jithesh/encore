@@ -71,17 +71,67 @@ class FakeClientSession:
                         "type": "object",
                         "properties": {"title": {"type": "string"}, "text": {"type": "string"}},
                     },
-                )
+                ),
+                SimpleNamespace(
+                    name="next_card",
+                    description="Get the next flashcard due for review.",
+                    input_schema={"type": "object", "properties": {}},
+                ),
+                SimpleNamespace(
+                    name="grade_card",
+                    description="Record the answer judgment.",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "card_id": {"type": "integer"},
+                            "correct": {"type": "boolean"},
+                        },
+                    },
+                ),
+                SimpleNamespace(
+                    name="progress",
+                    description="Get study progress.",
+                    input_schema={"type": "object", "properties": {}},
+                ),
             ]
         )
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
+        results = {
+            "add_material": {"cards_added": 3},
+            "progress": {"total": 3, "due_today": 3, "mastered": 0},
+            "next_card": {"id": 17, "title": "Biology", "question": "What powers the cell?"},
+            "grade_card": {
+                "answer": "ATP is the cell's energy currency.",
+                "next_review": "2026-10-13",
+            },
+        }
         return SimpleNamespace(
-            structured_content={"cards_added": 3},
+            structured_content=results[name],
             content=[],
             is_error=False,
         )
+
+
+def tool_response(name, arguments, call_id):
+    return {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": call_id,
+                            "name": name,
+                            "input": arguments,
+                        }
+                    }
+                ],
+            }
+        },
+        "stopReason": "tool_use",
+    }
 
 
 class WebAgentTests(IsolatedAsyncioTestCase):
@@ -163,6 +213,57 @@ class WebAgentTests(IsolatedAsyncioTestCase):
             "add_material",
         )
         self.assertEqual(messages[2]["content"][0]["toolResult"]["toolUseId"], "call-1")
+
+    async def test_full_study_session_add_quiz_grade_and_progress(self):
+        bedrock = FakeBedrock()
+        bedrock.responses = [
+            tool_response(
+                "add_material",
+                {"title": "Biology", "text": "ATP powers the cell."},
+                "call-add",
+            ),
+            tool_response("progress", {}, "call-progress-before"),
+            tool_response("next_card", {}, "call-next"),
+            tool_response("grade_card", {"card_id": 17, "correct": True}, "call-grade"),
+            tool_response("progress", {}, "call-progress-after"),
+            {
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"text": "You reviewed one card. Three cards are saved for later."}],
+                    }
+                },
+                "stopReason": "end_turn",
+            },
+        ]
+        session = FakeClientSession()
+
+        @asynccontextmanager
+        async def fake_transport(_):
+            yield object(), object()
+
+        with (
+            patch.object(web_app, "streamable_http_client", fake_transport),
+            patch.object(web_app, "ClientSession", return_value=session),
+            patch.object(web_app, "BEDROCK_MODEL_ID", "test-model"),
+        ):
+            reply = await web_app.run_agent(
+                [{"role": "user", "content": [{"text": "Let's study ATP, then quiz me."}]}],
+                bedrock_client=bedrock,
+                mcp_server_url="http://example.test/mcp",
+            )
+
+        self.assertEqual(
+            [name for name, _ in session.calls],
+            ["add_material", "progress", "next_card", "grade_card", "progress"],
+        )
+        self.assertEqual(session.calls[2], ("next_card", {}))
+        self.assertEqual(
+            session.calls[3],
+            ("grade_card", {"card_id": 17, "correct": True}),
+        )
+        self.assertEqual(reply, "You reviewed one card. Three cards are saved for later.")
+        self.assertEqual(len(bedrock.requests), 6)
 
 
 if __name__ == "__main__":
