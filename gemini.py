@@ -4,6 +4,7 @@ Free API key: https://aistudio.google.com -> Get API key. Stdlib only, no SDK.
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -15,21 +16,27 @@ def generate(contents: list[dict], system: str = "", tools: list[dict] | None = 
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise RuntimeError("GEMINI_API_KEY is not set.")
+    config.setdefault("thinkingConfig", {"thinkingLevel": "minimal"})  # thinking adds tens of seconds on the free tier
     body: dict = {"contents": contents, "generationConfig": config}
     if system:
         body["systemInstruction"] = {"parts": [{"text": system}]}
     if tools:
         body["tools"] = [{"functionDeclarations": tools}]
     request = urllib.request.Request(
-        URL.format(model=os.environ.get("GEMINI_MODEL", "gemini-flash-latest")),
+        URL.format(model=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")),
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
     )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.load(response)
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(f"Gemini {error.code}: {error.read().decode(errors='replace')[:300]}") from None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                data = json.load(response)
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 503 and attempt < 2:  # "high demand" spikes are usually brief
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise RuntimeError(f"Gemini {error.code}: {error.read().decode(errors='replace')[:300]}") from None
     try:
         return {"role": "model", **data["candidates"][0]["content"]}
     except (KeyError, IndexError):
