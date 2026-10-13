@@ -130,6 +130,14 @@ class WebAgentTests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(messages, [saved_turn])
 
+        class ConnectError(Exception):  # stands in for httpx's, which is not an OSError
+            pass
+
+        with patch.object(web_app, "run_agent", new_callable=AsyncMock, side_effect=ConnectError()):
+            response = await web_app.chat(request)
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("error", json.loads(response.body))  # the page always gets JSON
+
     async def test_agent_lists_calls_mcp_tools_and_returns_bedrock_reply(self):
         bedrock = FakeBedrock()
         session = FakeClientSession()

@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 import os
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
@@ -266,6 +268,12 @@ async def chat(request: Request) -> JSONResponse:
                 {"error": "I couldn't finish that request. Please try again."},
                 status_code=502,
             )
+        except Exception as error:  # e.g. httpx ConnectError when server.py isn't running; the page needs JSON
+            logger.exception("Encore agent request failed: %s", error)
+            return JSONResponse(
+                {"error": "I couldn't reach the study service. Please try again."},
+                status_code=502,
+            )
         messages[:] = turn_messages
 
     return JSONResponse({"reply": reply, "conversation_id": conversation_id})
@@ -273,6 +281,12 @@ async def chat(request: Request) -> JSONResponse:
 
 @asynccontextmanager
 async def lifespan(_: Starlette):
+    try:
+        await anyio.to_thread.run_sync(partial(urllib.request.urlopen, MCP_SERVER_URL, timeout=2))
+    except urllib.error.HTTPError:
+        pass  # any HTTP answer means the MCP server is up
+    except OSError:
+        logger.warning("No MCP server at %s. Start it first: python server.py", MCP_SERVER_URL)
     yield
     async with _conversations_lock:
         _conversations.clear()
