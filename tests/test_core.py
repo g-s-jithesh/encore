@@ -81,5 +81,31 @@ def test_materials():
     assert db.stats()["total"] == 1
 
 
+def test_gemini_thinking_config():
+    import io
+    import json
+    from unittest.mock import patch
+
+    import gemini
+
+    def body_for(model):
+        sent = {}
+
+        def fake_urlopen(request, timeout):
+            sent.update(json.loads(request.data))
+            return io.BytesIO(b'{"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}')
+
+        env = {"GEMINI_API_KEY": "k", **({"GEMINI_MODEL": model} if model else {})}
+        with patch.dict(os.environ, env), patch("urllib.request.urlopen", fake_urlopen):
+            os.environ.pop("GEMINI_THINKING_LEVEL", None)
+            if not model:
+                os.environ.pop("GEMINI_MODEL", None)
+            gemini.generate([{"role": "user", "parts": [{"text": "hi"}]}])
+        return sent["generationConfig"]
+
+    assert body_for(None) == {"thinkingConfig": {"thinkingLevel": "minimal"}}  # tested default model
+    assert body_for("gemini-2.5-flash") == {}  # other models keep their own thinking defaults
+
+
 if __name__ == "__main__":
-    test_srs(); test_flow(); test_server_validation(); test_materials(); print("ok")
+    test_srs(); test_flow(); test_server_validation(); test_materials(); test_gemini_thinking_config(); print("ok")

@@ -105,6 +105,29 @@ test("voice input and spoken replies cover the study flow", async ({ page }) => 
   ]);
 });
 
+test("Enter while a reply is pending keeps the typed text", async ({ page }) => {
+  let release!: () => void;
+  const replied = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/chat", async (route) => {
+    await replied;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ reply: "First reply.", conversation_id: "busy-conversation" }),
+    });
+  });
+
+  await page.goto("/");
+  const box = page.getByRole("textbox");
+  await box.fill("first");
+  await box.press("Enter");
+  await box.fill("second");
+  await box.press("Enter"); // still waiting for the first reply
+  await expect(box).toHaveValue("second");
+  release();
+  await expect(page.locator(".message.bot").last()).toHaveText("First reply.");
+  await expect(page.locator(".message.user")).toHaveCount(1);
+});
+
 test("text input remains available when speech recognition is unsupported", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "SpeechRecognition", { value: undefined });

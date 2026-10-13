@@ -252,15 +252,14 @@
       }
 
       function getPayloadText() {
-        const text = inputEl.value.trim();
-        inputEl.value = '';
-        inputEl.focus();
-        return text;
+        return inputEl.value.trim(); // sendMessage clears the box once it accepts the message
       }
 
       async function sendMessage(text) {
         const message = text.trim();
-        if (!message || sendBtn.disabled) return; // one turn at a time; Enter must not bypass the disabled button
+        if (!message || sendBtn.disabled) return; // one turn at a time; the typed text stays in the box
+        inputEl.value = '';
+        inputEl.focus();
 
         window.speechSynthesis?.cancel();
         appendMessage('user', message);
@@ -274,15 +273,15 @@
             body: JSON.stringify({ message, conversation_id: conversationId }),
           });
 
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(data.error || `Encore had a problem (HTTP ${response.status}). Please try again.`);
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.reply) {
+            throw new Error(data?.error || `Encore had a problem (HTTP ${response.status}). Please try again.`);
           }
 
           conversationId = data.conversation_id;
-          appendMessage('bot', data.reply || '');
+          appendMessage('bot', data.reply);
           setStatus('Ready', true);
-          speakReply(data.reply || '');
+          speakReply(data.reply);
         } catch (error) {
           const text = error instanceof TypeError // fetch itself failed: the web app is not running
             ? "I can't reach Encore. Make sure the web app is running."
@@ -343,6 +342,7 @@
         };
 
         recognitionInstance.onerror = (event) => {
+          if (event.error === 'no-speech' || event.error === 'aborted') return; // normal, onend resets to Ready
           voiceError = true;
           setStatus(event.error === 'not-allowed' ? 'Allow microphone access to talk' : 'Voice input unavailable', false);
         };

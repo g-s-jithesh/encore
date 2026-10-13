@@ -279,13 +279,20 @@ async def chat(request: Request) -> JSONResponse:
     return JSONResponse({"reply": reply, "conversation_id": conversation_id})
 
 
+def _mcp_server_up() -> bool:
+    try:
+        with urllib.request.urlopen(MCP_SERVER_URL, timeout=2):
+            return True
+    except urllib.error.HTTPError as error:
+        error.close()
+        return True  # any HTTP answer means the MCP server is up
+    except Exception:  # refused, timeout, or a malformed MCP_SERVER_URL: warn, never block startup
+        return False
+
+
 @asynccontextmanager
 async def lifespan(_: Starlette):
-    try:
-        await anyio.to_thread.run_sync(partial(urllib.request.urlopen, MCP_SERVER_URL, timeout=2))
-    except urllib.error.HTTPError:
-        pass  # any HTTP answer means the MCP server is up
-    except OSError:
+    if not await anyio.to_thread.run_sync(_mcp_server_up):
         logger.warning("No MCP server at %s. Start it first: python server.py", MCP_SERVER_URL)
     yield
     async with _conversations_lock:
