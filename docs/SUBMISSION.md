@@ -21,6 +21,25 @@
 
 **What's next.** Real Alexa+ integration once add-on tooling opens up, importing lecture PDFs and transcripts (`ingest.py` already extracts their text), and shared decks for study groups.
 
+## Open Source mini challenge (Devpost fields)
+- **Contribution URL:** https://github.com/g-s-jithesh/python-sdk/commit/6ecfa04ece6032816c7d3a087fd8c841cb0c43e1
+  (branch `fix/bare-container-structured-output` on our fork; reported upstream as
+  https://github.com/modelcontextprotocol/python-sdk/issues/3725)
+- **Project repository URL:** https://github.com/g-s-jithesh/encore
+- **GitHub username:** g-s-jithesh
+- **What:** a bug fix for the official MCP Python SDK. A tool whose return type is a bare `dict`, `list` or
+  `tuple` silently lost its structured output (no `outputSchema`, `structuredContent` always `None`), while
+  `dict[str, Any]` worked; with `structured_output=True` it even claimed a dict "is not serializable".
+- **How:** bare containers fell through to the SDK's "other class" case, where `get_type_hints(dict)` is
+  empty, so no output model was built. The fix adds one case that treats bare `dict` like `dict[str, ...]`
+  and wraps bare `list` / `tuple` like their generic forms, with a regression test (fails before, passes
+  after) and a docs note. The full SDK suite passes (6206 tests), plus pyright strict, ruff, and 100%
+  coverage of the new lines. Following the SDK's contribution rules, we filed the issue first; the PR
+  follows once a maintainer assigns it.
+- **Why it matters:** we hit this building Encore. Our tools returned `-> dict`, and our client expected
+  structured data that never came, with no error to explain why. Any MCP server written the natural way
+  (`-> dict`) loses its structured results, and so does every MCP App or client that reads them.
+
 ## Demo video script (under 3:00, best part first)
 - 0:00-0:20 Problem, then "Encore: a voice study coach for Alexa+"
 - 0:20-1:00 Speak your notes, flashcards get created
@@ -36,5 +55,5 @@
 - [ ] Simulator source is in the repo; MCP server (spec 2025-11-25, Streamable HTTP) shown running
 - [ ] Demo video: YouTube or Vimeo, public, under 3 minutes, English, no copyrighted music
 - [x] Product feedback for every tool used (see FEEDBACK.md)
-- [ ] Open Source: contribution URL, repo URL, GitHub username, what/how/why
+- [x] Open Source: contribution URL, repo URL, GitHub username, what/how/why (section above)
 - [x] Optional: feature requests and friction log

@@ -15,7 +15,7 @@ Issues: https://github.com/g-s-jithesh/encore/issues
 - [x] Integration test: an MCP client calls every tool against the running server
 - [ ] Review and merge PRs, keep `main` green
 - [ ] Own the Devpost submission form and the repo settings (make public with MIT: **overdue, was Oct 16**)
-- [ ] Open Source mini challenge: an upstream contribution (contribution URL, what/how/why)
+- [x] Open Source mini challenge: MCP Python SDK fix + issue #3725 (see `docs/SUBMISSION.md`)
 
 ## Mano (@Mkkumar2006), 30%: AI generation
 - [x] `generate.make_cards`, JSON output, 5-10 cards per input (Gemini by default; Bedrock path with mocked tests)
