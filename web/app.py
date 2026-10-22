@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ from starlette.routing import Route
 
 load_dotenv()
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root, so `python web/app.py` works too
 import gemini  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -324,4 +326,4 @@ app = Starlette(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("web.app:app", host="127.0.0.1", port=5000, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=5000)
