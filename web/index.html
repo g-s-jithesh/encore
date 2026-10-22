@@ -531,7 +531,7 @@
             'not-allowed': 'Allow microphone access to talk',
             'service-not-allowed': 'Allow microphone access to talk',
             'audio-capture': 'No microphone found',
-            'network': 'Voice input needs Chrome (speech service unreachable)',  // common in Edge
+            'network': 'Voice input does not work in this browser. Use Google Chrome',  // Brave has no speech service; Edge's is unreliable
           };
           setStatus(reasons[event.error] || `Voice input unavailable (${event.error})`, false);
         };
