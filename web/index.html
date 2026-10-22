@@ -446,6 +446,21 @@
         }
       }
 
+      // Warm, natural voices first (Edge/Windows "Natural", Chrome, macOS); the OS default
+      // on Windows is often a harsh male voice. Falls back to any English voice.
+      const PREFERRED_VOICES = ['Aria', 'Jenny', 'Ava', 'Emma', 'Sonia', 'Libby', 'Google UK English Female',
+        'Google US English', 'Samantha', 'Karen', 'Zira'];
+      function pickVoice() {
+        const voices = (window.speechSynthesis.getVoices?.() || []).filter((v) => v.lang?.startsWith('en'));
+        for (const name of PREFERRED_VOICES) {
+          const match = voices.find((v) => v.name.includes(name) && v.name.includes('Natural'))
+            || voices.find((v) => v.name.includes(name));
+          if (match) return match;
+        }
+        return voices[0] || null;
+      }
+      window.speechSynthesis?.getVoices?.(); // voices load lazily; ask early so they're ready
+
       function speakReply(text) {
         if (!text || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
           return;
@@ -453,6 +468,10 @@
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'en-US';
+        const voice = pickVoice();
+        if (voice) utterance.voice = voice;
+        utterance.rate = 0.92; // a calm study-coach pace; the default sounds rushed
+        utterance.pitch = 1.05;
         // sendMessage cancels speech, which fires onerror('interrupted') on this utterance;
         // never let a stale speech event overwrite the status of the turn now in progress
         const idle = () => !sendBtn.disabled;
