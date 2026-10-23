@@ -527,7 +527,13 @@
         recognitionInstance.onerror = (event) => {
           if (event.error === 'no-speech' || event.error === 'aborted') return; // normal, onend resets to Ready
           voiceError = true;
-          setStatus(event.error === 'not-allowed' ? 'Allow microphone access to talk' : 'Voice input unavailable', false);
+          const reasons = {
+            'not-allowed': 'Allow microphone access to talk',
+            'service-not-allowed': 'Allow microphone access to talk',
+            'audio-capture': 'No microphone found',
+            'network': 'Voice input does not work in this browser. Use Google Chrome',  // Brave has no speech service; Edge's is unreliable
+          };
+          setStatus(reasons[event.error] || `Voice input unavailable (${event.error})`, false);
         };
 
         recognitionInstance.onresult = (event) => {
